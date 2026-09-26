@@ -80,6 +80,13 @@ test('student: joins, explores, invests with a reason, sees portfolio, sells', a
 
   await page.getByRole('link', { name: 'Explore funds' }).first().click();
   await expect(page.getByRole('heading', { name: 'Large cap' })).toBeVisible();
+  // Search narrows the list; nonsense shows an empty state.
+  await page.getByLabel('Search funds').fill('gold');
+  await expect(page.getByText('SBI Gold Fund')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Large cap' })).toHaveCount(0);
+  await page.getByLabel('Search funds').fill('zzzz');
+  await expect(page.getByText('No funds match your search')).toBeVisible();
+  await page.getByLabel('Search funds').fill('');
   await expect(page.getByText(/NAV on \d+ \w+ \d{4}/).first()).toBeVisible();
   await shot(page, '08-student-explore');
 
@@ -99,16 +106,22 @@ test('student: joins, explores, invests with a reason, sees portfolio, sells', a
   await expect(page.getByText('₹80,000').first()).toBeVisible(); // cash left
   await shot(page, '11-student-portfolio');
 
-  await page.getByRole('link', { name: 'UTI Nifty 50 Index Fund' }).click();
+  // Clicking anywhere on the holding row (not just the name) opens the fund.
+  await page.getByRole('row', { name: /UTI Nifty 50 Index Fund/ }).getByText('Buy / sell ›').click();
+  await expect(page.getByText('Latest published NAV')).toBeVisible();
   await page.getByRole('tab', { name: 'Sell units' }).click();
   await page.getByLabel('Sell all my units').check();
   await page.getByRole('button', { name: 'Review' }).click();
   await page.getByRole('button', { name: 'Confirm sale' }).click();
   await expect(page.getByText('Sale recorded')).toBeVisible();
 
-  await page.getByRole('link', { name: 'My decisions' }).click();
-  await expect(page.getByText('Bought').first()).toBeVisible();
-  await expect(page.getByText('Sold').first()).toBeVisible();
+  await page.getByRole('link', { name: 'History' }).click();
+  await expect(page.getByRole('heading', { name: 'Buy & sell history' })).toBeVisible();
+  await expect(page.getByText('Showing 2 of 2 trades')).toBeVisible();
+  await expect(page.getByText('₹20,000.00').first()).toBeVisible(); // total bought, exact
+  await page.getByRole('tab', { name: 'Sells' }).click();
+  await expect(page.getByText('Showing 1 of 2 trades')).toBeVisible();
+  await page.getByRole('tab', { name: 'All' }).click();
   await shot(page, '12-student-decisions');
 });
 

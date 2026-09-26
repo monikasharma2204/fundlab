@@ -1,9 +1,10 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { Holding, Nudge, Trade } from '../lib/types';
 import { dateTime, inr, navDate, pct, tone } from '../lib/format';
 import { Badge, Empty } from './ui';
 
 export function HoldingsTable({ holdings, linkFunds = false }: { holdings: Holding[]; linkFunds?: boolean }) {
+  const navigate = useNavigate();
   if (holdings.length === 0) return <Empty title="No funds yet">All the money is still cash.</Empty>;
   return (
     <div className="-mx-5 overflow-x-auto">
@@ -15,31 +16,43 @@ export function HoldingsTable({ holdings, linkFunds = false }: { holdings: Holdi
             <th className="px-3 py-2 text-right font-medium">Put in</th>
             <th className="px-3 py-2 text-right font-medium">Worth now</th>
             <th className="px-3 py-2 text-right font-medium">Change</th>
-            <th className="px-5 py-2 text-right font-medium">Share</th>
+            <th className="px-3 py-2 text-right font-medium">Share</th>
+            {linkFunds && <th className="px-5 py-2" aria-label="Open fund" />}
           </tr>
         </thead>
         <tbody>
-          {holdings.map((h) => (
-            <tr key={h.schemeCode} className="border-b border-line/60 last:border-0">
-              <td className="px-5 py-3">
-                {linkFunds ? (
-                  <Link to={`/student/funds/${h.schemeCode}`} className="font-medium hover:underline">
-                    {h.schemeName}
-                  </Link>
-                ) : (
-                  <span className="font-medium">{h.schemeName}</span>
+          {holdings.map((h) => {
+            const href = `/student/funds/${h.schemeCode}`;
+            return (
+              <tr
+                key={h.schemeCode}
+                // The whole row opens the fund, so buying more or selling is one click from the portfolio.
+                onClick={linkFunds ? () => navigate(href) : undefined}
+                className={`border-b border-line/60 last:border-0 ${linkFunds ? 'cursor-pointer transition hover:bg-accent-soft/40' : ''}`}
+              >
+                <td className="px-5 py-3">
+                  {linkFunds ? (
+                    <Link to={href} onClick={(e) => e.stopPropagation()} className="font-medium text-accent underline-offset-2 hover:underline">
+                      {h.schemeName}
+                    </Link>
+                  ) : (
+                    <span className="font-medium">{h.schemeName}</span>
+                  )}
+                  <div className="text-xs text-muted">
+                    {h.category} · NAV {inr(h.nav, true)} on {navDate(h.navDate)}
+                  </div>
+                </td>
+                <td className="num px-3 py-3 text-right">{h.units}</td>
+                <td className="num px-3 py-3 text-right">{inr(h.costBasis)}</td>
+                <td className="num px-3 py-3 text-right font-medium">{inr(h.value)}</td>
+                <td className={`num px-3 py-3 text-right ${tone(h.returnPct)}`}>{pct(h.returnPct)}</td>
+                <td className="num px-3 py-3 text-right text-muted">{h.share}%</td>
+                {linkFunds && (
+                  <td className="px-5 py-3 text-right text-sm font-medium whitespace-nowrap text-accent">Buy / sell ›</td>
                 )}
-                <div className="text-xs text-muted">
-                  {h.category} · NAV {inr(h.nav, true)} on {navDate(h.navDate)}
-                </div>
-              </td>
-              <td className="num px-3 py-3 text-right">{h.units}</td>
-              <td className="num px-3 py-3 text-right">{inr(h.costBasis)}</td>
-              <td className="num px-3 py-3 text-right font-medium">{inr(h.value)}</td>
-              <td className={`num px-3 py-3 text-right ${tone(h.returnPct)}`}>{pct(h.returnPct)}</td>
-              <td className="num px-5 py-3 text-right text-muted">{h.share}%</td>
-            </tr>
-          ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

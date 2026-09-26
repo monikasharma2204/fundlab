@@ -4,7 +4,7 @@ import { Shell } from './components/Shell';
 import { getSession } from './lib/session';
 import type { Role } from './lib/types';
 import { Landing } from './pages/Landing';
-import { Activity } from './pages/student/Activity';
+import { History } from './pages/student/History';
 import { Explore } from './pages/student/Explore';
 import { FundDetail } from './pages/student/FundDetail';
 import { StudentEntry } from './pages/student/StudentEntry';
@@ -33,7 +33,8 @@ export function App() {
       <Route path="/student" element={<RequireRole role="STUDENT"><StudentHome /></RequireRole>} />
       <Route path="/student/funds" element={<RequireRole role="STUDENT"><Explore /></RequireRole>} />
       <Route path="/student/funds/:code" element={<RequireRole role="STUDENT"><FundDetail /></RequireRole>} />
-      <Route path="/student/activity" element={<RequireRole role="STUDENT"><Activity /></RequireRole>} />
+      <Route path="/student/history" element={<RequireRole role="STUDENT"><History /></RequireRole>} />
+      <Route path="/student/activity" element={<Navigate to="/student/history" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

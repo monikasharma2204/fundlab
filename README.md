@@ -31,14 +31,14 @@ No real money is ever involved.
 
 **Student**
 - Join with class code and a first name. No email. You get a 6-digit PIN to log in on other devices.
-- Portfolio: value, gain, cash and holdings, plus a daily reflection question.
-- Explore 16 curated real funds (Direct, Growth) across 9 categories. Each shows the latest published NAV **with its date**, the 1-year return, risk level and a plain-language description.
+- Portfolio: value, gain, cash and holdings (click a holding to buy more or sell), plus a daily reflection question.
+- Explore and search 16 curated real funds (Direct, Growth) across 9 categories. Each shows the latest published NAV **with its date**, the 1-year return, risk level and a plain-language description.
 - Fund page:
   - NAV history chart (1M–5Y);
   - returns, with 3Y/5Y annualised;
   - a buy flow that requires a reason (10–200 characters) and a review step;
   - sell by units or "sell all".
-- "My decisions": an append-only history of every trade and reason.
+- **History:** every buy and sell with the NAV used, its date and the reason, filterable by type and fund, searchable, and downloadable as CSV. Totals are summed in whole paise so they are exact.
 
 **Also**
 - A read-only **MCP server** (`apps/mcp`) so a teacher can ask an AI assistant things like "who in 10B needs a nudge, and what did Dev write as his reasons?"

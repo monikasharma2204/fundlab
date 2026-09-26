@@ -38,7 +38,7 @@ Set this up before recording:
    Click Review, then Confirm.
 6. Point at the result:
    > "The units are rounded down to 3 decimals, like a real statement, so my portfolio shows a few paise less than I paid. That's real, not a bug."
-7. **My decisions:**
+7. **History:**
    > "These can't be edited or deleted. The database itself refuses."
 
 ## Closing (30–45 s)

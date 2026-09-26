@@ -18,7 +18,7 @@ export function Logo() {
 const STUDENT_LINKS = [
   { to: '/student', label: 'My portfolio', end: true },
   { to: '/student/funds', label: 'Explore funds' },
-  { to: '/student/activity', label: 'My decisions' },
+  { to: '/student/history', label: 'History' },
 ];
 
 export function Shell({ children }: { children: ReactNode }) {
