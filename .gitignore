@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+apps/api/src/generated
+coverage
+playwright-report
+test-results
+.neon
+apps/web/test-results
+apps/web/playwright-report

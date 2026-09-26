@@ -1,0 +1,120 @@
+// FundLab data model.
+//
+// Core rule: Trade rows are the financial source of truth. Nothing in this
+// schema stores a cash balance, holding or portfolio value — those are always
+// derived from Classroom.startingCorpus + the student's trades + latest NAV.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Teacher {
+  id           String      @id @default(uuid()) @db.Uuid
+  email        String      @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime    @default(now()) @db.Timestamptz(3)
+  classrooms   Classroom[]
+}
+
+model Classroom {
+  id             String    @id @default(uuid()) @db.Uuid
+  teacherId      String    @db.Uuid
+  teacher        Teacher   @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  name           String
+  joinCode       String    @unique
+  /// Rupees. Same for every student in the class; cannot be edited once set.
+  startingCorpus Decimal   @db.Decimal(14, 2)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  students       Student[]
+
+  @@index([teacherId])
+}
+
+/// A student exists only inside one classroom. No email, no real name required.
+model Student {
+  id           String    @id @default(uuid()) @db.Uuid
+  classroomId  String    @db.Uuid
+  classroom    Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  displayName  String
+  /// displayName lower-cased with whitespace collapsed. Uniqueness is on this, so
+  /// "Ravi", "ravi" and "RAVI" can't be three different students on the teacher's screen.
+  nameKey      String
+  /// bcrypt hash of the server-generated 6-digit PIN used to log back in.
+  pinHash      String
+  /// Bumped when the teacher issues a new PIN; tokens carrying an older version stop working.
+  tokenVersion Int       @default(0)
+  joinedAt     DateTime  @default(now()) @db.Timestamptz(3)
+  trades       Trade[]
+
+  @@unique([classroomId, nameKey])
+}
+
+/// Curated universe of real schemes (AMFI scheme codes, Direct plan, Growth option).
+model Fund {
+  schemeCode Int        @id
+  schemeName String
+  fundHouse  String
+  /// Simplified category shown to students, e.g. "Large cap".
+  category   String
+  /// One plain-language sentence written for a 15-year-old.
+  blurb      String
+  riskLevel  RiskLevel
+  active     Boolean    @default(true)
+  navs       NavPrice[]
+  trades     Trade[]
+}
+
+enum RiskLevel {
+  LOW
+  MODERATE
+  HIGH
+  VERY_HIGH
+}
+
+/// Cache of published NAVs pulled from the fund data provider.
+model NavPrice {
+  schemeCode Int
+  fund       Fund     @relation(fields: [schemeCode], references: [schemeCode], onDelete: Restrict)
+  navDate    DateTime @db.Date
+  nav        Decimal  @db.Decimal(18, 4)
+  fetchedAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([schemeCode, navDate])
+}
+
+enum TradeType {
+  BUY
+  SELL
+}
+
+/// Immutable ledger. A database trigger rejects UPDATE and DELETE.
+model Trade {
+  id         String    @id @default(uuid()) @db.Uuid
+  /// Strictly increasing insert order. The ledger is always replayed by seq,
+  /// so two trades in the same millisecond still have one unambiguous order.
+  seq        BigInt    @unique @default(autoincrement())
+  studentId  String    @db.Uuid
+  student    Student   @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  schemeCode Int
+  fund       Fund      @relation(fields: [schemeCode], references: [schemeCode], onDelete: Restrict)
+  type       TradeType
+  /// Units allotted (BUY) or redeemed (SELL). 3 decimal places, like a real RTA statement.
+  units      Decimal   @db.Decimal(20, 3)
+  /// NAV the trade executed at, and the date that NAV was published for.
+  navUsed    Decimal   @db.Decimal(18, 4)
+  navDate    DateTime  @db.Date
+  /// Rupees debited from cash (BUY) or credited to cash (SELL).
+  amount     Decimal   @db.Decimal(14, 2)
+  /// Required for BUY ("Why are you making this investment?"). Optional for SELL.
+  reason     String?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([studentId, seq])
+}
