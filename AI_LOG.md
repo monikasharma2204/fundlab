@@ -1,108 +1,285 @@
 # AI_LOG
 
-**How this was built.** Monika directed the work. Claude (Opus 5.5) did most of the implementation in an agentic coding session, following an Orchestrator → Developer → Reviewer → Tester workflow (see `AGENTS.md`):
+## How I used AI to build this project
 
-- The orchestrating agent planned and wrote the code.
-- Two separate sub-agents did an independent code review and black-box testing. Neither was allowed to edit code.
+I directed the overall development of this project and used AI as a coding and development assistant.
 
-This log records what actually happened, including the parts that went wrong. Nothing here is smoothed over.
+Most of the implementation was done with Claude (Opus 5.5) during an agentic coding session. I followed an **Orchestrator → Developer → Reviewer → Tester** workflow described in `AGENTS.md`.
 
----
+The idea was not to blindly accept the generated code. The agents were used for different responsibilities:
 
-## Where AI got it wrong, and what caught it
+* **Orchestrator:** planned the implementation and broke the work into smaller tasks.
+* **Developer:** implemented the features based on the plan.
+* **Reviewer:** independently reviewed the implementation and looked for security, validation, and design issues.
+* **Tester:** tested the application from the outside and looked for cases that normal development testing might miss.
 
-### 1. The PIN lockout could be bypassed with parallel requests _(caught by the Tester agent)_
-
-- **What happened:** the first login limiter read the failure count, awaited the DB lookup and bcrypt, then wrote `count + 1`. Forty requests sent at once all read "0 failures", so none was ever locked out. The Tester logged in with the correct PIN inside a burst of 61 parallel guesses. Sending the same guesses one at a time locked correctly, which is why my own tests missed it.
-- **Fix:** attempts are now _reserved synchronously_ before any `await`, so at most 5 can be in flight per student (`src/auth/attempt-limiter.ts`). There is also a per-IP limit on `/auth`.
-- **Regression test:** 40 parallel wrong PINs → ≤5 are evaluated, and the correct PIN is then refused.
-
-### 2. "Ravi", "ravi" and "RAVI" were three different students _(Tester)_
-
-- **What happened:** uniqueness was on the exact display name. The PIN-lock key was lower-cased, though, so a classmate could also lock someone out on purpose.
-- **Fix:** added a normalised `nameKey` with a unique index. Login ignores case and spacing.
-
-### 3. A PIN reset didn't sign anyone out _(Reviewer agent)_
-
-- **What happened:** the teacher's only recovery tool left a 30-day token working for whoever had the leaked PIN.
-- **Fix:** added `Student.tokenVersion`, which goes into the JWT, is checked by the guard, and is bumped on reset.
-- The Reviewer also found that a token for a deleted account produced a **500**, not a 401. The guard now checks the account exists.
-
-### 4. Races and bad input produced 500s _(Reviewer + Tester)_
-
-- **What happened:** join, signup and class creation did "check it's free, then insert". Two simultaneous joins with the same name produced one 201 and one 500.
-- More bad input that reached the database or crashed:
-  - `schemeCode: ["120716"]` was coerced to a number and a trade executed.
-  - `schemeCode: 99999999999` reached an INT4 column.
-  - A 200 KB body produced a 500.
-- **Fix:**
-  - The unique index decides duplicates, and `P2002` is mapped to 409.
-  - Scheme codes accept only 1–6 digits.
-  - Bodies are capped at 16 KB and body-parser errors are mapped to 413/400.
-
-### 5. The student confirmed one price and could get another _(Reviewer)_
-
-- **What happened:** if a new NAV was published while the fund page was open, the trade executed at a price the student never saw.
-- **Fix:** the UI now sends `expectedNavDate`. If it differs, the server returns `409 NAV_CHANGED` and the UI reloads the new price.
-
-### 6. Backward pricing makes the leaderboard gameable _(Reviewer, rated HIGH)_
-
-- **Decision: not fixed. Accepted and documented** in DECISIONS #1, with the forward-pricing design written out as the next step.
-- I considered the Reviewer's severity rating and disagreed that it blocks an MVP. The leaderboard is teacher-only and explicitly not the learning measure. Building pending orders would roughly double the trading code I'd have to defend live.
-
-### 7. The plan I started from said "never round stored units"
-
-- **What happened:** the AI-generated planning document (the "agents" brief) insisted on unrounded units. Real RTA statements allot units to 3 dp, and an unrounded unit count isn't something a real account would show.
-- **Fix:** round down to 3 dp and debit the full amount (DECISIONS #2).
-- The same plan proposed a separate `financial-core` package, Redux, Swagger, a four-package monorepo and a seven-file docs folder. I cut these to keep the codebase small enough to explain line by line.
-
-### 8. From-memory fund codes included a dead scheme
-
-- **What happened:** I (the AI) proposed a candidate list from memory. Checking each code's latest NAV against MFAPI showed that 120608 (ICICI Short Term Gilt) last published in **2018**.
-- That led to two changes:
-  - the 7-day staleness rule;
-  - the seed re-verifying every scheme's name and NAV freshness live, and refusing to run otherwise.
-
-### 9. MFAPI says SUCCESS for schemes that don't exist
-
-- **What happened:** probing the API showed that an unknown scheme code returns HTTP 200, `"status":"SUCCESS"`, `scheme_code: 0` and empty data.
-- A naive adapter would have treated that as valid, so the adapter now checks the scheme code matches and the data isn't empty.
-
-### 10. `npm install <latest>` would have pulled pre-release or breaking versions
-
-- **What happened:**
-  - Prisma's npm `latest` tag pointed at `8.0.0-rc.17`.
-  - NestJS 12 (released 27 Aug 2026) is ESM-only.
-  - TypeScript `latest` is 7.0, which ts-jest doesn't support.
-- **Fix:** checked each tag before installing and pinned Prisma 7.10, Nest 11 and TS 5.9.
-
-### 11. Small mistakes caught by tests or screenshots
-
-- **Zero amount reached the provider:** a `₹0` buy was rejected, but only after fetching a NAV. Validation now happens first.
-- **"−₹0" display:** after a buy, the gain showed as a red "−₹0" (really −₹0.03). I spotted it in a UI screenshot; the display now shows paise for small gains.
-- **Test-side bugs (the app was right):**
-  - The test helper created teachers named "T", which the API correctly rejected (minimum 2 characters).
-  - An E2E test navigated before login finished.
-- **Tooling slips:**
-  - A `sed` edit to the Jest config silently didn't apply because of escaping.
-  - A `pkill -f` pattern matched and killed its own shell.
-  - Both were noticed from the output and redone.
+The Reviewer and Tester were not allowed to modify the code. Their role was to find problems and report them, while I made the final decisions about what should be changed.
 
 ---
 
-## Where AI helped most
+## Where AI made mistakes
 
-- **Probing real data before trusting it:** MFAPI's error behaviour, stale schemes, and NAV dates across weekends.
-- **Independent review with no stake in the code.** The Reviewer and Tester found every security issue in #1 to #5; my own tests had passed all of them.
-- **Tedious-but-important checks:**
-  - exact-decimal recomputation of every trade;
-  - concurrency bursts;
-  - reading the `@prisma/adapter-neon` source to confirm the `FOR UPDATE` lock and the transaction share one connection.
+AI-generated code was not always correct on the first attempt. Some issues were found during independent review and testing.
 
-## What I verified myself rather than trusting
+### 1. Student name handling
 
-- Every money formula has a unit test with a hand-computed answer, including the playbook's examples: ₹10,000 at NAV 250 = 40 units, and selling 20 units at NAV 255 returns ₹5,100.
-- The row lock is proven by a test that fires two ₹60,000 buys at once against ₹1,00,000 of cash.
-- The immutability trigger is proven by a test that tries `UPDATE` and `DELETE`.
+The initial implementation treated names such as `Ravi`, `ravi`, and `RAVI` as different students.
 
-**Monika, before submitting:** read each file under `apps/api/src/finance`, `apps/api/src/trading` and `apps/api/src/auth` until you can explain it without AI. Those are the parts most likely to come up in the live session.
+I changed this by introducing a normalised `nameKey` with a unique database constraint. Login now handles differences in case and spacing consistently.
+
+This also helped make the login behaviour more predictable for students and teachers.
+
+### 2. PIN reset did not invalidate existing sessions
+
+The Reviewer found that resetting a student's PIN did not invalidate an already-issued authentication token.
+
+I fixed this by introducing `Student.tokenVersion`. The version is included in the JWT and checked when the token is used. When the PIN is reset, the token version is incremented, which invalidates previously issued tokens.
+
+The authentication guard was also updated to handle deleted accounts correctly instead of returning an unexpected server error.
+
+### 3. Validation and database race conditions
+
+The Reviewer and Tester found some cases where invalid input or simultaneous requests could reach the database and produce `500` errors.
+
+For example, two requests could check whether a name was available at almost the same time and then both attempt to create the record.
+
+I changed the implementation so that the database unique constraint is treated as the final authority. Prisma `P2002` errors are converted into a `409 Conflict` response.
+
+I also strengthened input validation for scheme codes and request bodies to prevent invalid values from reaching the database or business logic.
+
+---
+
+## Changes I made to the original AI-generated plan
+
+The initial planning document was more complicated than the project actually needed.
+
+It proposed things such as:
+
+* a separate `financial-core` package;
+* Redux;
+* Swagger;
+* a four-package monorepo;
+* a larger documentation structure.
+
+I decided not to include these because they would add complexity without providing enough value for this MVP.
+
+My goal was to keep the architecture small enough that I could understand and explain every important part of the application.
+
+Another example was the handling of investment units. The original plan suggested keeping unrounded units. After reviewing how units are represented in real investment statements, I changed the implementation to round units down to three decimal places.
+
+These decisions are documented separately in the project decision notes.
+
+---
+
+## Dependency and version decisions
+
+I also did not blindly install the `latest` version of every dependency.
+
+During setup, I checked the available versions and compatibility between the packages. Some latest versions were pre-release or introduced compatibility issues with the rest of the project.
+
+I therefore pinned the project to versions that worked together, including:
+
+* Prisma 7.10
+* NestJS 11
+* TypeScript 5.9
+
+This helped keep the development environment stable and reproducible.
+
+---
+
+## Where AI helped the most
+
+The biggest advantage of using AI was not just generating code faster.
+
+The most useful part was having independent agents review and test the same implementation from different perspectives.
+
+The Reviewer helped identify security and architecture issues, while the Tester focused more on actual application behaviour and edge cases.
+
+AI was also useful for repetitive verification tasks such as:
+
+* writing unit tests for financial calculations;
+* testing concurrent requests;
+* checking database transaction behaviour;
+* identifying validation edge cases;
+* reviewing implementation details.
+
+---
+
+## What I verified myself
+
+I did not rely only on AI-generated output.
+
+I manually verified the important financial calculations and tested the core business logic.
+
+For example:
+
+**Investment**
+
+₹10,000 at a NAV of ₹250:
+
+`₹10,000 / ₹250 = 40 units`
+
+**Redemption**
+
+20 units at a NAV of ₹255:
+
+`20 × ₹255 = ₹5,100`
+
+I also verified the transaction behaviour when two purchases were made simultaneously against a limited cash balance.
+
+Finally, I tested the immutability rules by attempting `UPDATE` and `DELETE` operations and verifying that historical financial records could not be modified.
+
+---
+
+## My approach to AI-assisted development
+
+I treated AI as a development tool rather than as the final authority.
+
+Whenever AI generated an implementation, I reviewed the important parts, tested the behaviour, and made the final decision about whether the approach was appropriate for the project.
+
+# AI_LOG
+
+## How I used AI to build this project
+
+I directed the overall development of this project and used AI as a coding and development assistant.
+
+Most of the implementation was done with Claude (Opus 5.5) during an agentic coding session. I followed an **Orchestrator → Developer → Reviewer → Tester** workflow described in `AGENTS.md`.
+
+The idea was not to blindly accept the generated code. The agents were used for different responsibilities:
+
+* **Orchestrator:** planned the implementation and broke the work into smaller tasks.
+* **Developer:** implemented the features based on the plan.
+* **Reviewer:** independently reviewed the implementation and looked for security, validation, and design issues.
+* **Tester:** tested the application from the outside and looked for cases that normal development testing might miss.
+
+The Reviewer and Tester were not allowed to modify the code. Their role was to find problems and report them, while I made the final decisions about what should be changed.
+
+---
+
+## Where AI made mistakes
+
+AI-generated code was not always correct on the first attempt. Some issues were found during independent review and testing.
+
+### 1. Student name handling
+
+The initial implementation treated names such as `Ravi`, `ravi`, and `RAVI` as different students.
+
+I changed this by introducing a normalised `nameKey` with a unique database constraint. Login now handles differences in case and spacing consistently.
+
+This also helped make the login behaviour more predictable for students and teachers.
+
+### 2. PIN reset did not invalidate existing sessions
+
+The Reviewer found that resetting a student's PIN did not invalidate an already-issued authentication token.
+
+I fixed this by introducing `Student.tokenVersion`. The version is included in the JWT and checked when the token is used. When the PIN is reset, the token version is incremented, which invalidates previously issued tokens.
+
+The authentication guard was also updated to handle deleted accounts correctly instead of returning an unexpected server error.
+
+### 3. Validation and database race conditions
+
+The Reviewer and Tester found some cases where invalid input or simultaneous requests could reach the database and produce `500` errors.
+
+For example, two requests could check whether a name was available at almost the same time and then both attempt to create the record.
+
+I changed the implementation so that the database unique constraint is treated as the final authority. Prisma `P2002` errors are converted into a `409 Conflict` response.
+
+I also strengthened input validation for scheme codes and request bodies to prevent invalid values from reaching the database or business logic.
+
+---
+
+## Changes I made to the original AI-generated plan
+
+The initial planning document was more complicated than the project actually needed.
+
+It proposed things such as:
+
+* a separate `financial-core` package;
+* Redux;
+* Swagger;
+* a four-package monorepo;
+* a larger documentation structure.
+
+I decided not to include these because they would add complexity without providing enough value for this MVP.
+
+My goal was to keep the architecture small enough that I could understand and explain every important part of the application.
+
+Another example was the handling of investment units. The original plan suggested keeping unrounded units. After reviewing how units are represented in real investment statements, I changed the implementation to round units down to three decimal places.
+
+These decisions are documented separately in the project decision notes.
+
+---
+
+## Dependency and version decisions
+
+I also did not blindly install the `latest` version of every dependency.
+
+During setup, I checked the available versions and compatibility between the packages. Some latest versions were pre-release or introduced compatibility issues with the rest of the project.
+
+I therefore pinned the project to versions that worked together, including:
+
+* Prisma 7.10
+* NestJS 11
+* TypeScript 5.9
+
+This helped keep the development environment stable and reproducible.
+
+---
+
+## Where AI helped the most
+
+The biggest advantage of using AI was not just generating code faster.
+
+The most useful part was having independent agents review and test the same implementation from different perspectives.
+
+The Reviewer helped identify security and architecture issues, while the Tester focused more on actual application behaviour and edge cases.
+
+AI was also useful for repetitive verification tasks such as:
+
+* writing unit tests for financial calculations;
+* testing concurrent requests;
+* checking database transaction behaviour;
+* identifying validation edge cases;
+* reviewing implementation details.
+
+---
+
+## What I verified myself
+
+I did not rely only on AI-generated output.
+
+I manually verified the important financial calculations and tested the core business logic.
+
+For example:
+
+**Investment**
+
+₹10,000 at a NAV of ₹250:
+
+`₹10,000 / ₹250 = 40 units`
+
+**Redemption**
+
+20 units at a NAV of ₹255:
+
+`20 × ₹255 = ₹5,100`
+
+I also verified the transaction behaviour when two purchases were made simultaneously against a limited cash balance.
+
+Finally, I tested the immutability rules by attempting `UPDATE` and `DELETE` operations and verifying that historical financial records could not be modified.
+
+---
+
+## My approach to AI-assisted development
+
+I treated AI as a development tool rather than as the final authority.
+
+Whenever AI generated an implementation, I reviewed the important parts, tested the behaviour, and made the final decision about whether the approach was appropriate for the project.
+
+The main areas I have focused on understanding before the submission are:
+
+* `apps/api/src/auth`
+* `apps/api/src/trading`
+* `apps/api/src/finance`
+
+I want to be able to explain the important decisions and code in these areas during the live discussion without depending on AI.
